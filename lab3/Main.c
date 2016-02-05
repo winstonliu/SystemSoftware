@@ -2,7 +2,7 @@ code Main
 
   -- OS Class: Project 3
   --
-  -- <PUT YOUR NAME HERE>
+  -- Chengzhi Winston Liu
   --
 
   -- This package contains the following:
@@ -10,14 +10,10 @@ code Main
 -----------------------------  Main  ---------------------------------
 
   function main ()
-      -- InitializeScheduler ()
-      -- DiningPhilosophers ()
-
-      FatalError ("Need to implement")
+      InitializeScheduler ()
+      DiningPhilosophers ()
+			ThreadFinish()	
     endFunction
-
-
-
 
 -----------------------------  Dining Philosophers  ----------------------------
 
@@ -106,28 +102,65 @@ code Main
     superclass Object
     fields
       status: array [5] of int -- For each philosopher: HUNGRY, EATING, or THINKING
+			forkLock: Mutex
+			forkCond: array [5] of Condition
     methods
       Init ()
       PickupForks (p: int)
       PutDownForks (p: int)
       PrintAllStatus ()
+			left (p: int) returns int
+			right (p: int) returns int 
   endClass
 
   behavior ForkMonitor
 
     method Init ()
-      -- Initialize so that all philosophers are THINKING.
-      -- ...unimplemented...
+			var i: int
+			forkLock = new Mutex
+			forkLock.Init()
+			
+			-- Initialize so that all philosophers are THINKING.
+			status = new array of int {5 of THINKING}
+			forkCond = new array of Condition {5 of new Condition}
+
+			-- Initialize forkCond
+			for i = 0 to 4
+				forkCond[i].Init()
+			endFor
+			
       endMethod
 
     method PickupForks (p: int)
-      -- This method is called when philosopher 'p' wants to eat.
-      -- ...unimplemented...
+			-- This method is called when philosopher 'p' wants to eat.
+			forkLock.Lock()
+			status[p] = HUNGRY
+			
+			while status[self.left(p)] == EATING || status[self.right(p)] == EATING
+				forkCond[p].Wait(&forkLock)
+			endWhile
+
+			status[p] = EATING
+
+			self.PrintAllStatus()
+			forkLock.Unlock()
       endMethod
 
     method PutDownForks (p: int)
       -- This method is called when the philosopher 'p' is done eating.
-      -- ...unimplemented...
+			forkLock.Lock()
+			status[p] = THINKING
+
+			if status[self.left(p)] == HUNGRY
+				forkCond[self.left(p)].Signal(&forkLock)
+			endIf
+
+			if status[self.right(p)] == HUNGRY
+				forkCond[self.right(p)].Signal(&forkLock)
+			endIf
+
+			self.PrintAllStatus()
+			forkLock.Unlock()
       endMethod
 
     method PrintAllStatus ()
@@ -159,6 +192,15 @@ code Main
         endFor
         nl ()
       endMethod
+
+		method left (p: int) returns int
+				return (p + 4) % 5
+			endMethod
+
+		method right (p: int) returns int
+				return (p + 1) % 5
+			endMethod
+			
 
   endBehavior
 
