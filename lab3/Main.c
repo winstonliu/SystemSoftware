@@ -11,7 +11,8 @@ code Main
 
   function main ()
       InitializeScheduler ()
-      DiningPhilosophers ()
+      -- DiningPhilosophers ()
+			SleepingBarber ()
 			ThreadFinish()	
     endFunction
 
@@ -203,5 +204,193 @@ code Main
 			
 
   endBehavior
+
+-----------------------------  Sleeping Barber Problem ----------------------------
+	enum NONE, ENTER, SIT, BEGIN, FINISH, LEAVE, START, END
+	const
+		CHAIRS = 5 
+		NUM_CUSTOMERS = 10
+		NUM_BARBERS = 1
+		NUM_CUTS_EA = 1
+	var
+		barber_mon: BarberMonitor
+		barbers: array [NUM_BARBERS] of Thread = new array of Thread {NUM_BARBERS of new Thread }
+		customers: array [NUM_CUSTOMERS] of Thread = new array of Thread {NUM_CUSTOMERS of new Thread }
+
+	function SleepingBarber ()
+			var 
+				i: int
+				mystr: ptr to array of char = " "
+
+			for i = 1 to CHAIRS
+				print (" ")
+			endFor
+
+			print (" BigB ")
+
+			for i = 1 to NUM_CUSTOMERS
+				printInt (i)
+				print (" ")
+			endFor
+			
+			nl()
+
+			barber_mon = new BarberMonitor
+			barber_mon.Init()
+
+			for i = 0 to NUM_BARBERS - 1
+				-- Barber opens shop
+				mystr[0] = intToChar (i)
+				barbers[i].Init(mystr)
+				barbers[i].Fork(OpenStore, i)
+			endFor
+
+			for i = NUM_BARBERS to (NUM_CUSTOMERS + NUM_BARBERS - 1) -- for ID purpose
+				-- Customers arrive
+				mystr[0] = intToChar (i)
+				customers[i-NUM_BARBERS].Init(mystr)
+				customers[i-NUM_BARBERS].Fork(GetHaircut, i)
+			endFor
+				
+		endFunction
+
+	function OpenStore (p:int)
+			var
+				k: int
+			for k = 1 to NUM_BARBERS
+				barber_mon.Barber(p)
+			endFor
+		endFunction
+
+	function GetHaircut (p: int)
+			-- Loops customers if they want to get multiple haircuts
+			var
+				k: int
+			for k = 1 to NUM_CUTS_EA 
+				barber_mon.Customer(p)
+			endFor
+		endFunction	
+
+	class BarberMonitor
+		superclass Object
+		fields
+			varLock: Mutex
+			sem_customer, sem_barber: Semaphore	
+			waiting: int
+			id: int
+		methods
+			Init() -- id of thread
+			Barber(p: int)	
+			Customer(p: int)
+			PrintStatus(status: int)
+	endClass
+
+	behavior BarberMonitor
+		method Init()
+				varLock = new Mutex
+				varLock.Init()
+				waiting = 0
+				
+				sem_barber = new Semaphore
+				sem_customer = new Semaphore
+
+				sem_customer.Init(0)
+				sem_barber.Init(0)
+			endMethod
+
+		method Barber(p: int)
+				while true
+					sem_customer.Down()
+					varLock.Lock()
+					id = p
+					-- indicates completion of previous cut
+					if waiting > 0
+						self.PrintStatus(END)
+					endIf
+					self.PrintStatus(START)
+					waiting = waiting - 1
+					varLock.Unlock()	
+					sem_customer.Up()
+					currentThread.Yield () -- cut hair
+				endWhile
+			endMethod
+
+		method Customer(p: int)
+				varLock.Lock()
+				id = p
+				self.PrintStatus(ENTER)
+				if waiting < CHAIRS
+					self.PrintStatus(SIT)
+					waiting = waiting + 1
+					sem_customer.Up()
+					self.PrintStatus(BEGIN)
+					varLock.Unlock() -- can't sleep holding the lock
+					sem_barber.Down()
+					-- reacquire lock to print out status
+					varLock.Lock()
+					self.PrintStatus(FINISH)
+					varLock.Unlock()
+				else
+					self.PrintStatus(LEAVE)
+					varLock.Unlock()
+				endIf
+			endMethod
+
+		method PrintStatus(status: int)
+				-- USE ONLY FROM WITHIN MUTEX BLOCK
+				var
+					k: int
+
+				-- Print occupado status
+				for k = 1 to CHAIRS
+					if waiting < k
+						print ("-")
+					else
+						print ("X")
+					endIf
+				endFor
+
+				print (" ")
+
+				if id < NUM_BARBERS	-- thread is a Barber
+					switch status
+						case START:
+							print ("STRT")
+							break
+						case END:
+							print ("END")
+							break
+					endSwitch
+				else
+					print ("    ")
+				endIf
+
+				for k = 1 to NUM_CUSTOMERS
+					if id == k
+						switch status
+							case ENTER:
+								print (" E")
+								break
+							case SIT:
+								print (" S")
+								break
+							case BEGIN:
+								print (" B")
+								break
+							case FINISH:
+								print (" F")
+								break
+							case LEAVE:
+								print (" L")
+								break
+						endSwitch
+					else
+						print ("  ")
+					endIf
+				endFor
+				nl()
+			endMethod	
+
+	endBehavior
 
 endCode
