@@ -12,7 +12,8 @@ code Main
   function main ()
       InitializeScheduler ()
       -- DiningPhilosophers ()
-			SleepingBarber ()
+			-- SleepingBarber ()
+			GamingParlor()
 			ThreadFinish()	
     endFunction
 
@@ -117,51 +118,51 @@ code Main
   behavior ForkMonitor
 
     method Init ()
-			var i: int
-			forkLock = new Mutex
-			forkLock.Init()
-			
-			-- Initialize so that all philosophers are THINKING.
-			status = new array of int {5 of THINKING}
-			forkCond = new array of Condition {5 of new Condition}
+				var i: int
+				forkLock = new Mutex
+				forkLock.Init()
+				
+				-- Initialize so that all philosophers are THINKING.
+				status = new array of int {5 of THINKING}
+				forkCond = new array of Condition {5 of new Condition}
 
-			-- Initialize forkCond
-			for i = 0 to 4
-				forkCond[i].Init()
-			endFor
+				-- Initialize forkCond
+				for i = 0 to 4
+					forkCond[i].Init()
+				endFor
 			
       endMethod
 
     method PickupForks (p: int)
-			-- This method is called when philosopher 'p' wants to eat.
-			forkLock.Lock()
-			status[p] = HUNGRY
-			
-			while status[self.left(p)] == EATING || status[self.right(p)] == EATING
-				forkCond[p].Wait(&forkLock)
-			endWhile
+				-- This method is called when philosopher 'p' wants to eat.
+				forkLock.Lock()
+				status[p] = HUNGRY
+				
+				while status[self.left(p)] == EATING || status[self.right(p)] == EATING
+					forkCond[p].Wait(&forkLock)
+				endWhile
 
-			status[p] = EATING
+				status[p] = EATING
 
-			self.PrintAllStatus()
-			forkLock.Unlock()
+				self.PrintAllStatus()
+				forkLock.Unlock()
       endMethod
 
     method PutDownForks (p: int)
-      -- This method is called when the philosopher 'p' is done eating.
-			forkLock.Lock()
-			status[p] = THINKING
+				-- This method is called when the philosopher 'p' is done eating.
+				forkLock.Lock()
+				status[p] = THINKING
 
-			if status[self.left(p)] == HUNGRY
-				forkCond[self.left(p)].Signal(&forkLock)
-			endIf
+				if status[self.left(p)] == HUNGRY
+					forkCond[self.left(p)].Signal(&forkLock)
+				endIf
 
-			if status[self.right(p)] == HUNGRY
-				forkCond[self.right(p)].Signal(&forkLock)
-			endIf
+				if status[self.right(p)] == HUNGRY
+					forkCond[self.right(p)].Signal(&forkLock)
+				endIf
 
-			self.PrintAllStatus()
-			forkLock.Unlock()
+				self.PrintAllStatus()
+				forkLock.Unlock()
       endMethod
 
     method PrintAllStatus ()
@@ -211,7 +212,7 @@ code Main
 		CHAIRS = 5 
 		NUM_CUSTOMERS = 10
 		NUM_BARBERS = 1
-		NUM_CUTS_EA = 1
+		NUM_CUTS_EA = 2
 	var
 		barber_mon: BarberMonitor
 		barbers: array [NUM_BARBERS] of Thread = new array of Thread {NUM_BARBERS of new Thread }
@@ -220,7 +221,6 @@ code Main
 	function SleepingBarber ()
 			var 
 				i: int
-				mystr: ptr to array of char = " "
 
 			for i = 1 to CHAIRS
 				print (" ")
@@ -238,35 +238,51 @@ code Main
 			barber_mon = new BarberMonitor
 			barber_mon.Init()
 
-			for i = 0 to NUM_BARBERS - 1
-				-- Barber opens shop
-				mystr[0] = intToChar (i)
-				barbers[i].Init(mystr)
-				barbers[i].Fork(OpenStore, i)
-			endFor
+			-- Barber opens shop
+			barbers[0].Init("B1")
+			barbers[0].Fork(OpenStore, 0)
 
-			for i = NUM_BARBERS to (NUM_CUSTOMERS + NUM_BARBERS - 1) -- for ID purpose
-				-- Customers arrive
-				mystr[0] = intToChar (i)
-				customers[i-NUM_BARBERS].Init(mystr)
-				customers[i-NUM_BARBERS].Fork(GetHaircut, i)
-			endFor
-				
+			-- Customers arrive
+			customers[0].Init("C0")
+			customers[0].Fork(GetHaircut, 1)
+
+			customers[1].Init("C1")
+			customers[1].Fork(GetHaircut, 2)
+
+			customers[2].Init("C2")
+			customers[2].Fork(GetHaircut, 3)
+			
+			customers[3].Init("C3")
+			customers[3].Fork(GetHaircut, 4)
+
+			customers[4].Init("C4")
+			customers[4].Fork(GetHaircut, 5)
+
+			customers[5].Init("C5")
+			customers[5].Fork(GetHaircut, 6)
+
+			customers[6].Init("C6")
+			customers[6].Fork(GetHaircut, 7)
+
+			customers[7].Init("C7")
+			customers[7].Fork(GetHaircut, 8)
+
+			customers[8].Init("C8")
+			customers[8].Fork(GetHaircut, 9)
+
+			customers[9].Init("C9")
+			customers[9].Fork(GetHaircut, 10)
+
 		endFunction
 
 	function OpenStore (p:int)
-			var
-				k: int
-			for k = 1 to NUM_BARBERS
-				barber_mon.Barber(p)
-			endFor
+			barber_mon.Barber(p)
 		endFunction
 
 	function GetHaircut (p: int)
-			-- Loops customers if they want to get multiple haircuts
 			var
 				k: int
-			for k = 1 to NUM_CUTS_EA 
+			for k = 1 to NUM_CUTS_EA
 				barber_mon.Customer(p)
 			endFor
 		endFunction	
@@ -274,69 +290,98 @@ code Main
 	class BarberMonitor
 		superclass Object
 		fields
-			varLock: Mutex
-			sem_customer, sem_barber: Semaphore	
+			bLock: Mutex
+			sem_customer, sem_barber, sem_barber_done, sem_cLeave: Semaphore	
 			waiting: int
-			id: int
+			cust_cnt: int
 		methods
 			Init() -- id of thread
 			Barber(p: int)	
 			Customer(p: int)
-			PrintStatus(status: int)
+			PrintStatus(status: int, id: int)
 	endClass
 
 	behavior BarberMonitor
 		method Init()
-				varLock = new Mutex
-				varLock.Init()
+				bLock = new Mutex
+				bLock.Init()
 				waiting = 0
 				
+				-- Counts the number of customers that have visited
+				cust_cnt = 0
+				
 				sem_barber = new Semaphore
+				sem_barber_done = new Semaphore
 				sem_customer = new Semaphore
+				sem_cLeave = new Semaphore
 
 				sem_customer.Init(0)
 				sem_barber.Init(0)
+				sem_barber_done.Init(0)
+				sem_cLeave.Init(0)
 			endMethod
 
 		method Barber(p: int)
-				while true
+				bLock.Lock()
+				while cust_cnt <= NUM_CUSTOMERS * NUM_CUTS_EA
+					bLock.Unlock()
+
+					-- Go to sleep if no customers
 					sem_customer.Down()
-					varLock.Lock()
-					id = p
-					-- indicates completion of previous cut
-					if waiting > 0
-						self.PrintStatus(END)
-					endIf
-					self.PrintStatus(START)
+
+					bLock.Lock()
 					waiting = waiting - 1
-					varLock.Unlock()	
-					sem_customer.Up()
+					self.PrintStatus(START, p)
+					bLock.Unlock()	
+
+					sem_barber.Up()
 					currentThread.Yield () -- cut hair
+					sem_barber_done.Down()
+
+					bLock.Lock()
+					self.PrintStatus(END, p)
+					bLock.Unlock()
+
+					sem_cLeave.Up()
+
+					bLock.Lock()
 				endWhile
 			endMethod
 
 		method Customer(p: int)
-				varLock.Lock()
-				id = p
-				self.PrintStatus(ENTER)
+				bLock.Lock()
+				cust_cnt = cust_cnt+1
+				self.PrintStatus(ENTER, p)
 				if waiting < CHAIRS
-					self.PrintStatus(SIT)
 					waiting = waiting + 1
+					self.PrintStatus(SIT, p)
+					bLock.Unlock() -- can't sleep holding the lock
+
 					sem_customer.Up()
-					self.PrintStatus(BEGIN)
-					varLock.Unlock() -- can't sleep holding the lock
 					sem_barber.Down()
+
+					bLock.Lock()
+					self.PrintStatus(BEGIN, p)
+					bLock.Unlock()
+
+					currentThread.Yield () -- get hair cut
+
 					-- reacquire lock to print out status
-					varLock.Lock()
-					self.PrintStatus(FINISH)
-					varLock.Unlock()
+					bLock.Lock()
+					self.PrintStatus(FINISH, p)
+					bLock.Unlock()
+
+					sem_barber_done.Up()
+					sem_cLeave.Down()
 				else
-					self.PrintStatus(LEAVE)
-					varLock.Unlock()
+					bLock.Unlock()
 				endIf
+				bLock.Lock()
+				self.PrintStatus(LEAVE, p)
+				bLock.Unlock()
 			endMethod
 
-		method PrintStatus(status: int)
+		method PrintStatus(status: int, id: int)
 				-- USE ONLY FROM WITHIN MUTEX BLOCK
 				var
 					k: int
@@ -352,19 +397,18 @@ code Main
 
 				print (" ")
 
-				if id < NUM_BARBERS	-- thread is a Barber
-					switch status
-						case START:
-							print ("STRT")
-							break
-						case END:
-							print ("END")
-							break
-					endSwitch
-				else
-					print ("    ")
-				endIf
-
+				switch status
+					case START:
+						print ("STRT")
+						break
+					case END:
+						print ("END")
+						break
+					default:
+						print ("    ")
+						break
+				endSwitch
+				
 				for k = 1 to NUM_CUSTOMERS
 					if id == k
 						switch status
@@ -392,5 +436,113 @@ code Main
 			endMethod	
 
 	endBehavior
+
+----------------------------- Gaming Parlor Problem ----------------------------
+
+	const
+		NUM_PLAYS = 5
+		NUM_DICE = 8
+		NUM_GAMES = 8
+  var
+    pmon: ParlorMonitor
+    games: array [NUM_GAMES] of Thread = new array of Thread {NUM_GAMES of new Thread }
+
+	function GamingParlor()
+			pmon = new ParlorMonitor	
+			pmon.Init()
+
+			games[0].Init("A")
+			games[0].Fork(PlayGames, 4)
+
+			games[1].Init("B")
+			games[1].Fork(PlayGames, 4)
+
+			games[2].Init("C")
+			games[2].Fork(PlayGames, 5)		
+
+			games[3].Init("D")
+			games[3].Fork(PlayGames, 5)		
+
+			games[4].Init("E")
+			games[4].Fork(PlayGames, 2)		
+
+			games[5].Init("F")
+			games[5].Fork(PlayGames, 2)		
+
+			games[6].Init("G")
+			games[6].Fork(PlayGames, 1)		
+
+			games[7].Init("H")
+			games[7].Fork(PlayGames, 1)		
+		endFunction
+
+	function PlayGames(p:int)
+			var
+				k: int
+			for k = 1 to NUM_PLAYS
+				pmon.Request(p)
+				pmon.Return(p)
+			endFor
+		endFunction
+
+	class ParlorMonitor
+		superclass Object
+		fields
+			numberDiceAvail: int
+			pLock: Mutex
+			pCond: Condition
+			pCondCnt: int
+		methods
+			Init()
+			Request(numDice: int)
+			Return(numDice: int)
+			Print(str: String, count: int)
+
+	endClass
+
+	behavior ParlorMonitor
+		method Init()
+				numberDiceAvail = NUM_DICE 
+
+				pLock = new Mutex
+				pLock.Init()
+
+				pCond = new Condition
+				pCond.Init()
+			endMethod
+
+		method Request(numDice: int)
+				pLock.Lock()	
+				self.Print("requests", numDice)
+				while numberDiceAvail < numDice
+					pCond.Wait(&pLock)
+				endWhile
+				numberDiceAvail = numberDiceAvail - numDice
+				self.Print("proceeds with", numDice)
+				pLock.Unlock()
+			endMethod
+ 
+		method Return(numDice: int)
+				pLock.Lock()
+				self.Print("releases and adds back", numDice)
+				pCond.Signal(&pLock)
+				numberDiceAvail = numberDiceAvail + numDice
+				pLock.Unlock()
+			endMethod
+
+		method Print(str: String, count: int)
+				print (currentThread.name)
+				print (" ")
+				print (str)
+				print (" ")
+				printInt (count)
+				nl ()
+				print ("------------------------------Number of dice now avail = ")
+				printInt (numberDiceAvail)
+				nl()
+			endMethod
+	
+	endBehavior
+
 
 endCode

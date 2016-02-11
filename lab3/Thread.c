@@ -280,7 +280,7 @@ code Thread
           var
             oldIntStat, junk: int
           oldIntStat = SetInterruptsTo (DISABLED)
-          -- print ("Forking thread...\n")
+          --print ("Forking thread...\n")
           initialFunction = fun
           initialArgument = arg
           stackTop = stackTop - 4
