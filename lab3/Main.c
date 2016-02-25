@@ -524,9 +524,9 @@ code Main
  
 		method Return(numDice: int)
 				pLock.Lock()
-				self.Print("releases and adds back", numDice)
-				pCond.Signal(&pLock)
 				numberDiceAvail = numberDiceAvail + numDice
+				self.Print("releases and adds back", numDice)
+				pCond.Broadcast(&pLock)
 				pLock.Unlock()
 			endMethod
 
