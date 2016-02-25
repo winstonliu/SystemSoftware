@@ -798,7 +798,6 @@ code Kernel
         -- This method is passed a ptr to a Thread;  It moves it
         -- to the FREE list.
         -- 
-          -- NOT IMPLEMENTED
 					tmLock.Lock()
 
 					(*th).status = UNUSED
@@ -894,7 +893,26 @@ code Kernel
         -- This method is called once at kernel startup time to initialize
         -- the one and only "processManager" object.  
         --
-        -- NOT IMPLEMENTED
+					-- NOT IMPLEMENTED
+					var
+						k: int
+					processTable = new array of ProcessControlBlock {MAX_NUMBER_OF_PROCESSES of new ProcessControlBlock}
+					freeList = new List [ProcessControlBlock]
+					nextPid = 0
+
+					processManagerLock = new Mutex
+					processManagerLock.Init()
+
+					aProcessBecameFree = new Condition        
+					aProcessBecameFree.Init()
+
+					aProcessDied = new Condition        
+					aProcessDied.Init()
+
+					for k = 0 to MAX_NUMBER_OF_PROCESSES-1
+						processTable[k].Init()
+						freeList.AddToEnd(&processTable[k])
+					endFor
         endMethod
 
       ----------  ProcessManager . Print  ----------
@@ -949,8 +967,21 @@ code Kernel
         -- This method returns a new ProcessControlBlock; it will wait
         -- until one is available.
         --
-          -- NOT IMPLEMENTED
-          return null
+					var
+						pPCB: ptr to ProcessControlBlock
+					processManagerLock.Lock()
+
+					while freeList.IsEmpty()
+						aProcessBecameFree.Wait(&processManagerLock)
+					endWhile
+
+					pPCB = freeList.Remove()
+					(*pPCB).status = ACTIVE
+					(*pPCB).pid = nextPid
+					nextPid = nextPid + 1
+
+					processManagerLock.Unlock()
+          return pPCB
         endMethod
 
       ----------  ProcessManager . FreeProcess  ----------
@@ -960,7 +991,14 @@ code Kernel
         -- This method is passed a ptr to a Process;  It moves it
         -- to the FREE list.
         --
-          -- NOT IMPLEMENTED
+					processManagerLock.Lock()
+
+					(*p).status = FREE
+					freeList.AddToEnd(p)
+
+					aProcessBecameFree.Signal(&processManagerLock)
+
+					processManagerLock.Unlock()
         endMethod
 
 
@@ -1068,13 +1106,43 @@ code Kernel
       ----------  FrameManager . GetNewFrames  ----------
 
       method GetNewFrames (aPageTable: ptr to AddrSpace, numFramesNeeded: int)
-          -- NOT IMPLEMENTED
+					var
+						i, f, frameAddr: int 
+					frameManagerLock.Lock()
+
+					while numberFreeFrames < numFramesNeeded
+						newFramesAvailable.Wait(&frameManagerLock)
+					endWhile
+
+					for i = 0 to numFramesNeeded - 1
+						f = framesInUse.FindZeroAndSet()
+						frameAddr = PHYSICAL_ADDRESS_OF_FIRST_PAGE_FRAME + (f * PAGE_SIZE)
+						aPageTable.SetFrameAddr(i, frameAddr)
+						numberFreeFrames = numberFreeFrames - 1
+					endFor
+					aPageTable.numberOfPages = numFramesNeeded
+
+					frameManagerLock.Unlock()
         endMethod
 
       ----------  FrameManager . ReturnAllFrames  ----------
 
       method ReturnAllFrames (aPageTable: ptr to AddrSpace)
-          -- NOT IMPLEMENTED
+					var
+						bitNum, i, numToRet, frameAddr: int
+					frameManagerLock.Lock()
+					numToRet = aPageTable.numberOfPages	
+
+					for i = 0 to numToRet-1
+						frameAddr = aPageTable.ExtractFrameAddr(i)
+						bitNum = (frameAddr - PHYSICAL_ADDRESS_OF_FIRST_PAGE_FRAME)/PAGE_SIZE
+						framesInUse.ClearBit(bitNum)
+					endFor
+
+					numberFreeFrames = numberFreeFrames + numToRet
+					newFramesAvailable.Broadcast(&frameManagerLock)
+
+					frameManagerLock.Unlock()
         endMethod
 
     endBehavior

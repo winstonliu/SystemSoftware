@@ -6,9 +6,9 @@ code Main
 
   function main ()
 
+/*
 
       var th0, th1, th2: ptr to Thread
-/*
           proc0, proc1, proc2, proc3: ptr to ProcessControlBlock
 
 */
@@ -20,21 +20,22 @@ code Main
       InitializeScheduler ()
 
       -- Initialize the ProcessManager
-      --processManager = new ProcessManager
-      --processManager.Init ()
+      processManager = new ProcessManager
+      processManager.Init ()
 
       -- Initialize the ThreadManager
       threadManager = new ThreadManager
       threadManager.Init ()
 
       -- Initialize the FrameManager
-      --frameManager = new FrameManager
-      --frameManager.Init ()
+      frameManager = new FrameManager
+      frameManager.Init ()
 
 -- THE FOLLOWING CODE MAY BE USEFUL DURING TESTING, SO YOU MAY WISH TO
 -- UNCOMMENT AND USE ALL OR PART OF IT.  HOWEVER, FOR YOUR FINAL RUN,
 -- PLEASE USE THIS FILE EXACTLY AS DISTRIBUTED.
 
+/*
 
       -- Print the initial state
       print ("\n====================  INITIAL STATE  ====================\n\n")
@@ -60,7 +61,6 @@ code Main
       threadManager.FreeThread (th0)
       threadManager.FreeThread (th2)
 
-/*
       -- Print the initial state
       print ("\n====================  INITIAL STATE  ====================\n\n")
       processManager.Print ()
@@ -110,8 +110,8 @@ code Main
 
       -- Run more thorough tests.
       RunThreadManagerTests ()
-      --RunProcessManagerTests ()
-      --RunFrameManagerTests ()
+      RunProcessManagerTests ()
+      RunFrameManagerTests ()
 
       RuntimeExit ()
 
