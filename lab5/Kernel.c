@@ -11,19 +11,34 @@ code Kernel
 			var
 				myTh: ptr to Thread
 			myTh = threadManager.GetANewThread()
-			(*myTh).Fork(StartUserProgram, 0)
-
+			myTh.Init("UserProgram")
+			myTh.Fork(StartUserProcess, 0)
 		endFunction
 
------------------------------  StartUserProgram  ------------------------------------
+-----------------------------  StartUserProcess  ------------------------------------
 
-	function StartUserProgram ()
+	function StartUserProcess ()
 			var
 				myPCB: ptr to ProcessControlBlock
+				initUserPC, initUserStackTop, initSystemStackTop, oldIntStat: int
+				openFilePtr: ptr to OpenFile
+
 			myPCB = processManager.GetANewProcess()
 			myPCB.myThread = currentThread 
 			currentThread.myProcess = myPCB
 
+			openFilePtr = fileManager.Open("TestProgram1")
+			initUserPC = openFilePtr.LoadExecutable(&myPCB.addrSpace)	
+			fileManager.Close(openFilePtr)
+			-- 0 indexed
+			initUserStackTop = myPCB.addrSpace.numberOfPages * PAGE_SIZE
+			initSystemStackTop = (&currentThread.systemStack[SYSTEM_STACK_SIZE-1]) asInteger
+
+			oldIntStat = SetInterruptsTo (DISABLED)
+			myPCB.addrSpace.SetToThisPageTable()
+			currentThread.isUserThread = true
+
+			BecomeUserThread(initUserStackTop, initUserPC, initSystemStackTop)
 		endFunction
 
 -----------------------------  InitializeScheduler  ---------------------------------
@@ -1151,6 +1166,7 @@ code Kernel
       ----------  FrameManager . ReturnAllFrames  ----------
 
       method ReturnAllFrames (aPageTable: ptr to AddrSpace)
+					-- Free everything
 					var
 						bitNum, i, numToRet, frameAddr: int
 					frameManagerLock.Lock()
@@ -1751,7 +1767,9 @@ code Kernel
 -----------------------------  Handle_Sys_Exit  ---------------------------------
 
   function Handle_Sys_Exit (returnStatus: int)
-			print("HANDLE_SYS_EXIT ")
+			print("Handle_Sys_Exit invoked!")
+			nl()
+			print("returnStatus = ")
 			printInt(returnStatus)
 			nl()
     endFunction
@@ -1765,14 +1783,14 @@ code Kernel
 -----------------------------  Handle_Sys_Yield  ---------------------------------
 
   function Handle_Sys_Yield ()
-			print("HANDLE_SYS_YIELD ")
+			print("Handle_Sys_Yield invoked!")
 			nl()
     endFunction
 
 -----------------------------  Handle_Sys_Fork  ---------------------------------
 
   function Handle_Sys_Fork () returns int
-			print("HANDLE_SYS_FORK ")
+			print("Handle_Sys_Fork invoked!")
 			nl()
       return 1000
     endFunction
@@ -1780,7 +1798,9 @@ code Kernel
 -----------------------------  Handle_Sys_Join  ---------------------------------
 
   function Handle_Sys_Join (processID: int) returns int
-			print("HANDLE_SYS_JOIN ")
+			print("Handle_Sys_Join invoked!")
+			nl()
+			print("processID = ")
 			printInt(processID)
 			nl()
       return 2000
@@ -1790,11 +1810,45 @@ code Kernel
 
   function Handle_Sys_Exec (filename: ptr to array of char) returns int
 			var
-				buf: array [100] of char	
-			buf = *filename
-			print("HANDLE_SYS_EXEC ")
-			print(&buf)
-			nl()
+				buf: array [MAX_STRING_SIZE] of char	
+				oldPtr: int
+				newAddrSpace: AddrSpace = new AddrSpace
+				initUserPC, initUserStackTop, initSystemStackTop, oldIntStat: int
+				openFilePtr: ptr to OpenFile
+
+			newAddrSpace.Init()
+			oldPtr = currentThread.myProcess.addrSpace.GetStringFromVirtual(&buf,(filename) asInteger,MAX_STRING_SIZE)
+			if oldPtr < 0
+				return -1
+			endIf
+
+			openFilePtr = fileManager.Open(&buf)
+
+			if openFilePtr == null 
+				return -1
+			endIf
+
+			initUserPC = openFilePtr.LoadExecutable(&newAddrSpace)	
+			fileManager.Close(openFilePtr)
+
+			if initUserPC < 0
+				return -1
+			endIf
+
+			-- free all frames
+			frameManager.ReturnAllFrames(&currentThread.myProcess.addrSpace)
+			currentThread.myProcess.addrSpace = newAddrSpace
+
+			-- 0 indexed
+			initUserStackTop = currentThread.myProcess.addrSpace.numberOfPages * PAGE_SIZE
+			initSystemStackTop = (&currentThread.systemStack[SYSTEM_STACK_SIZE-1]) asInteger
+
+			oldIntStat = SetInterruptsTo (DISABLED)
+			currentThread.myProcess.addrSpace.SetToThisPageTable()
+			currentThread.isUserThread = true
+
+			BecomeUserThread(initUserStackTop, initUserPC, initSystemStackTop)
+
       return 3000
     endFunction
 
@@ -1802,9 +1856,15 @@ code Kernel
 
   function Handle_Sys_Create (filename: ptr to array of char) returns int
 			var
-				buf: array [100] of char	
-			buf = *filename
-			print("HANDLE_SYS_CREATE ")
+				buf: array [MAX_STRING_SIZE] of char	
+				oldPtr: int
+			oldPtr = currentThread.myProcess.addrSpace.GetStringFromVirtual(&buf,(filename) asInteger,MAX_STRING_SIZE)
+			print("Handle_Sys_Create invoked!")
+			nl()
+			print("virt addr of filename = ")
+			printHex((filename) asInteger)
+			nl()
+			print("filename = ")
 			print(&buf)
 			nl()
       return 4000
@@ -1814,9 +1874,15 @@ code Kernel
 
   function Handle_Sys_Open (filename: ptr to array of char) returns int
 			var
-				buf: array [100] of char	
-			buf = *filename
-			print("HANDLE_SYS_OPEN ")
+				buf: array [MAX_STRING_SIZE] of char	
+				oldPtr: int
+			oldPtr = currentThread.myProcess.addrSpace.GetStringFromVirtual(&buf,(filename) asInteger,MAX_STRING_SIZE)
+			print("Handle_Sys_Open invoked!")
+			nl()
+			print("virt addr of filename = ")
+			printHex((filename) asInteger)
+			nl()
+			print("filename = ")
 			print(&buf)
 			nl()
       return 5000
@@ -1825,8 +1891,16 @@ code Kernel
 -----------------------------  Handle_Sys_Read  ---------------------------------
 
   function Handle_Sys_Read (fileDesc: int, buffer: ptr to char, sizeInBytes: int) returns int
-			print("HANDLE_SYS_READ ")
+			print("Handle_Sys_Read invoked!")
+			nl()
+			print("fileDesc = ")
 			printInt(fileDesc)
+			nl()
+			print("virt addr of buffer = ")
+			printHex((buffer) asInteger)
+			nl()
+			print("sizeInBytes = ")
+			printInt(sizeInBytes)
 			nl()
       return 6000
     endFunction
@@ -1835,8 +1909,16 @@ code Kernel
 
   function Handle_Sys_Write (fileDesc: int, buffer: ptr to char, sizeInBytes: int) returns int
       -- NOT IMPLEMENTED
-			print("HANDLE_SYS_WRITE ")
+			print("Handle_Sys_Write invoked!")
+			nl()
+			print("fileDesc = ")
 			printInt(fileDesc)
+			nl()
+			print("virt addr of buffer = ")
+			printHex((buffer) asInteger)
+			nl()
+			print("sizeInBytes = ")
+			printInt(sizeInBytes)
 			nl()
       return 7000
     endFunction
@@ -1844,8 +1926,13 @@ code Kernel
 -----------------------------  Handle_Sys_Seek  ---------------------------------
 
   function Handle_Sys_Seek (fileDesc: int, newCurrentPos: int) returns int
-			print("HANDLE_SYS_SEEK ")
+			print("Handle_Sys_Seek invoked!")
+			nl()
+			print("fileDesc = ")
 			printInt(fileDesc)
+			nl()
+			print("newCurrentPos = ")
+			printInt(newCurrentPos)
 			nl()
       return 8000
     endFunction
@@ -1853,7 +1940,9 @@ code Kernel
 -----------------------------  Handle_Sys_Close  ---------------------------------
 
   function Handle_Sys_Close (fileDesc: int)
-			print("HANDLE_SYS_CLOSE ")
+			print("Handle_Sys_Close invoked!")
+			nl()
+			print("fileDesc = ")
 			printInt(fileDesc)
 			nl()
     endFunction

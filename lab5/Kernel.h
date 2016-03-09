@@ -104,6 +104,7 @@ header Kernel
     SetInterruptsTo (newStatus: int) returns int
     ProcessFinish (exitStatus: int)
 		InitFirstProcess()
+		StartUserProcess()
 
     -- Routines from Switch.s:
 
