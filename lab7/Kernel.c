@@ -2224,8 +2224,8 @@ code Kernel
 					return -1
 				endIf
 			else
-				print ("fileDesc error")
-				nl()
+				-- print ("fileDesc error")
+				-- nl()
 				return -1
 			endIf
 			myFile = currentThread.myProcess.fileDescriptor[fileDesc]
