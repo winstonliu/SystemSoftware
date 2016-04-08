@@ -20,11 +20,11 @@ var bigBuffer: array [9000] of char = new array of char { 9000 of '?' }
 
       -- BasicSerialTest ()
       -- KeyTest ()
-      EchoTest ()
+      -- EchoTest ()
       -- LineEchoTest ()
       -- EOFTest ()
       -- OpenCloseTerminalTest ()
-      -- TerminalErrorTest ()
+      TerminalErrorTest ()
       -- Menu ()
 
       Sys_Shutdown ()

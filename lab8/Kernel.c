@@ -2380,15 +2380,11 @@ code Kernel
 				if virtPage < 0 || virtPage >= currentThread.myProcess.addrSpace.numberOfPages || 
 										!(currentThread.myProcess.addrSpace.IsValid(virtPage)) ||
 										!(currentThread.myProcess.addrSpace.IsWritable(virtPage))
-					print ("virtPage error")
-					nl()
 					return -1
 				endIf
 
 				destAddr = currentThread.myProcess.addrSpace.ExtractFrameAddr(virtPage) + offset
 				if destAddr > (NUMBER_OF_PHYSICAL_PAGE_FRAMES * PAGE_SIZE)
-					print ("destAddr error")
-					nl()
 					return -1
 				endIf
 
