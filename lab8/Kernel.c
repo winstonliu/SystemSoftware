@@ -2289,10 +2289,12 @@ code Kernel
 			-- nl()
 
 			if 0 > fileDesc || fileDesc >= MAX_FILES_PER_PROCESS
+				print ("Invalid fileDesc range.\n")
 				return -1
 			endIf
 
 			if currentThread.myProcess.fileDescriptor[fileDesc] == null || sizeInBytes < 0
+				print ("File ptr null, or size invalid\n")
 				return -1
 			endIf
 			myFile = currentThread.myProcess.fileDescriptor[fileDesc]
@@ -2307,41 +2309,43 @@ code Kernel
 				if virtPage < 0 || virtPage >= currentThread.myProcess.addrSpace.numberOfPages || 
 											!(currentThread.myProcess.addrSpace.IsValid(virtPage)) ||
 											!(currentThread.myProcess.addrSpace.IsWritable(virtPage))
+					print("virtPage invalid \n")
 					return -1
 				endIf
 
 				while copiedSoFar < sizeInBytes
-						-- Translate to physical address
-						destAddr = currentThread.myProcess.addrSpace.ExtractFrameAddr(virtPage) + offset
-						if destAddr > NUMBER_OF_PHYSICAL_PAGE_FRAMES * PAGE_SIZE
-							return -1
-						endIf
-						nxtChar = *(destAddr asPtrTo char)
+					-- Translate to physical address
+					destAddr = currentThread.myProcess.addrSpace.ExtractFrameAddr(virtPage) + offset
+					if destAddr > NUMBER_OF_PHYSICAL_PAGE_FRAMES * PAGE_SIZE
+						print ("destaddr invalid\n")
+						return -1
+					endIf
+					nxtChar = *(destAddr asPtrTo char)
 
-						if nxtChar == 0x04
+					if nxtChar == 0x04
+						return copiedSoFar
+					endIf
+
+					if (nxtChar == '\n' || nxtChar == '\r')
+						serialDriver.PutChar ('\r')
+						serialDriver.PutChar ('\n')
+					else
+						serialDriver.PutChar (nxtChar)
+					endIf
+					copiedSoFar = copiedSoFar + 1
+					offset = offset + 1
+
+					currentThread.myProcess.addrSpace.SetReferenced(virtPage)
+
+					if offset == PAGE_SIZE
+						virtPage = virtPage+1
+						offset = 0
+						if virtPage < 0 || virtPage >= currentThread.myProcess.addrSpace.numberOfPages || 
+											!currentThread.myProcess.addrSpace.IsValid(virtPage) ||
+											!currentThread.myProcess.addrSpace.IsWritable(virtPage)
 							return copiedSoFar
 						endIf
-
-						if nxtChar == '\n'
-							serialDriver.PutChar('\r')
-						endIf
-						serialDriver.PutChar(nxtChar)
-
-						copiedSoFar = copiedSoFar + 1
-						offset = offset + 1
-
-						currentThread.myProcess.addrSpace.SetReferenced(virtPage)
-
-						if offset == PAGE_SIZE
-							virtPage = virtPage+1
-							offset = 0
-
-							if virtPage < 0 || virtPage >= currentThread.myProcess.addrSpace.numberOfPages || 
-												!(currentThread.myProcess.addrSpace.IsValid(virtPage)) ||
-												!(currentThread.myProcess.addrSpace.IsWritable(virtPage))
-								return copiedSoFar
-							endIf
-						endIf 
+					endIf 
 				endWhile
 				return copiedSoFar
 			endIf
@@ -3455,9 +3459,11 @@ code Kernel
 						ret: char
 					
 					serialLock.Lock()
-					while getBufferSize == 0
+
+					if getBufferSize == 0
 						getCharacterAvail.Wait(&serialLock)
-					endWhile
+					endIf
+
 					ret = getBuffer[getBufferNextOut]					
 					getBufferNextOut = (getBufferNextOut+1)%SERIAL_PUT_BUFFER_SIZE
 					getBufferSize = getBufferSize-1
@@ -3474,9 +3480,9 @@ code Kernel
 					serialLock.Lock()
 
 					putBuffer[putBufferNextIn] = value
-					putBufferNextIn = (putBufferNextIn+1)%SERIAL_PUT_BUFFER_SIZE
+					putBufferNextIn = (putBufferNextIn + 1) % SERIAL_PUT_BUFFER_SIZE
 
-					putBufferSize = putBufferSize+1
+					putBufferSize = putBufferSize + 1
 					serialLock.Unlock()
 					serialNeedsAttention.Up()
 				endMethod
