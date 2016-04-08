@@ -12,7 +12,7 @@ code Kernel
 				myTh: ptr to Thread
 			myTh = threadManager.GetANewThread()
 			myTh.Init("UserProcess")
-			myTh.Fork(StartUserProcess, "TestProgram4" asInteger)
+			myTh.Fork(StartUserProcess, "TestProgram5" asInteger)
 		endFunction
 
 -----------------------------  StartUserProcess  ------------------------------------
@@ -27,7 +27,7 @@ code Kernel
 			myPCB.myThread = currentThread 
 			currentThread.myProcess = myPCB
 
-			openFilePtr = fileManager.Open("TestProgram4")
+			openFilePtr = fileManager.Open("TestProgram5")
 			initUserPC = openFilePtr.LoadExecutable(&myPCB.addrSpace)	
 			fileManager.Close(openFilePtr)
 			-- 0 indexed
@@ -1662,6 +1662,7 @@ code Kernel
       currentInterruptStatus = DISABLED
 			if serialHasBeenInitialized
 				serialDriver.serialNeedsAttention.Up()
+			endIf
     endFunction
 -----------------------------  IllegalInstructionHandler  --------------------------
 
@@ -2035,14 +2036,17 @@ code Kernel
 				return -1
 			endIf
 
-			if StrEqual(buf, "terminal")
-				newFilePtr = fileManager.serialTerminalFile
+			if StrEqual(&buf, "terminal")
+				newFilePtr = &fileManager.serialTerminalFile
+				newFilePtr.kind = TERMINAL
 			else 
 				newFilePtr = fileManager.Open(&buf)
 
 				if newFilePtr == null
 					return -1
 				endIf
+
+				newFilePtr.kind = FILE
 			endIf
 
 			-- print("newFilePtr ")
@@ -2071,20 +2075,84 @@ code Kernel
 				destAddr: int
 				myFile: ptr to OpenFile
 				junk: bool
+				nxtChar: char
 
 			-- print (">> Running read: ")
 			-- print ("Read fileDesc ")
 			-- printInt (fileDesc)
 			-- nl()
 			-- Check for validity
-			if 0 <= fileDesc && fileDesc < MAX_FILES_PER_PROCESS
-				if currentThread.myProcess.fileDescriptor[fileDesc] == null || sizeInBytes < 0
-					return -1
-				endIf
-			else
+
+			-- print ("Calling read...\n")
+			if 0 > fileDesc || fileDesc >= MAX_FILES_PER_PROCESS
+				print ("Invalid fileDesc range.\n")
+				return -1
+			endIf
+
+			if currentThread.myProcess.fileDescriptor[fileDesc] == null || sizeInBytes < 0
+				print ("File ptr null, or size invalid\n")
 				return -1
 			endIf
 			myFile = currentThread.myProcess.fileDescriptor[fileDesc]
+			
+			-- Do Serial Terminal File Read
+			if myFile.kind  == TERMINAL
+				virtAddr = buffer asInteger
+				virtPage = virtAddr / PAGE_SIZE
+				offset = virtAddr % PAGE_SIZE
+				copiedSoFar = 0
+
+				if virtPage < 0 || virtPage >= currentThread.myProcess.addrSpace.numberOfPages || 
+										!(currentThread.myProcess.addrSpace.IsValid(virtPage)) ||
+										!(currentThread.myProcess.addrSpace.IsWritable(virtPage))
+					print("virtPage invalid \n")
+					return -1
+				endIf
+
+				while copiedSoFar < sizeInBytes
+					nxtChar = serialDriver.GetChar()
+
+					if nxtChar == 0x04
+						return copiedSoFar
+					endIf
+
+					-- Translate to physical address
+					destAddr = currentThread.myProcess.addrSpace.ExtractFrameAddr(virtPage) + offset
+					if destAddr > NUMBER_OF_PHYSICAL_PAGE_FRAMES * PAGE_SIZE
+						print ("destaddr invalid\n")
+						return -1
+					endIf
+
+					-- Replace with \n
+					if nxtChar == '\r'
+						nxtChar = '\n'
+					endIf
+
+					*(destAddr asPtrTo char) = nxtChar
+					copiedSoFar = copiedSoFar + 1
+					offset = offset + 1
+
+					currentThread.myProcess.addrSpace.SetDirty(virtPage)
+					currentThread.myProcess.addrSpace.SetReferenced(virtPage)
+
+					if nxtChar == '\n'
+						break
+					endIf
+
+					if offset == PAGE_SIZE
+						virtPage = virtPage+1
+						offset = 0
+
+						if virtPage < 0 || virtPage >= currentThread.myProcess.addrSpace.numberOfPages || 
+											!(currentThread.myProcess.addrSpace.IsValid(virtPage)) ||
+											!(currentThread.myProcess.addrSpace.IsWritable(virtPage))
+							return copiedSoFar
+						endIf
+					endIf 
+				endWhile
+				
+				return copiedSoFar
+			endIf
 
 			-- Check Run
 			virtAddr = buffer asInteger
@@ -2212,6 +2280,7 @@ code Kernel
 				destAddr: int
 				myFile: ptr to OpenFile
 				junk: bool
+				nxtChar: char
 			-- Check for validity
 			-- print ("Running write")
 			-- nl()
@@ -2219,21 +2288,64 @@ code Kernel
 			-- printInt (fileDesc)
 			-- nl()
 
-			if 0 <= fileDesc && fileDesc < MAX_FILES_PER_PROCESS
-				if currentThread.myProcess.fileDescriptor[fileDesc] == null || sizeInBytes < 0
-					-- print ("Size in bytes: ")
-					-- printInt(sizeInBytes)
-					-- print (" fileDescriptor ")
-					-- printInt (currentThread.myProcess.fileDescriptor[fileDesc] asInteger)
-					-- nl()
-					return -1
-				endIf
-			else
-				-- print ("fileDesc error")
-				-- nl()
+			if 0 > fileDesc || fileDesc >= MAX_FILES_PER_PROCESS
+				return -1
+			endIf
+
+			if currentThread.myProcess.fileDescriptor[fileDesc] == null || sizeInBytes < 0
 				return -1
 			endIf
 			myFile = currentThread.myProcess.fileDescriptor[fileDesc]
+
+			-- Serial Requirements
+			if currentThread.myProcess.fileDescriptor[fileDesc].kind == TERMINAL
+				virtAddr = buffer asInteger
+				virtPage = virtAddr / PAGE_SIZE
+				offset = virtAddr % PAGE_SIZE
+				copiedSoFar = 0
+
+				if virtPage < 0 || virtPage >= currentThread.myProcess.addrSpace.numberOfPages || 
+											!(currentThread.myProcess.addrSpace.IsValid(virtPage)) ||
+											!(currentThread.myProcess.addrSpace.IsWritable(virtPage))
+					return -1
+				endIf
+
+				while copiedSoFar < sizeInBytes
+						-- Translate to physical address
+						destAddr = currentThread.myProcess.addrSpace.ExtractFrameAddr(virtPage) + offset
+						if destAddr > NUMBER_OF_PHYSICAL_PAGE_FRAMES * PAGE_SIZE
+							return -1
+						endIf
+						nxtChar = *(destAddr asPtrTo char)
+
+						if nxtChar == 0x04
+							return copiedSoFar
+						endIf
+
+						if nxtChar == '\n'
+							serialDriver.PutChar('\r')
+						endIf
+						serialDriver.PutChar(nxtChar)
+
+						copiedSoFar = copiedSoFar + 1
+						offset = offset + 1
+
+						currentThread.myProcess.addrSpace.SetReferenced(virtPage)
+
+						if offset == PAGE_SIZE
+							virtPage = virtPage+1
+							offset = 0
+
+							if virtPage < 0 || virtPage >= currentThread.myProcess.addrSpace.numberOfPages || 
+												!(currentThread.myProcess.addrSpace.IsValid(virtPage)) ||
+												!(currentThread.myProcess.addrSpace.IsWritable(virtPage))
+								return copiedSoFar
+							endIf
+						endIf 
+				endWhile
+				return copiedSoFar
+			endIf
+
 
 			-- Check Run
 			virtAddr = buffer asInteger
@@ -2405,15 +2517,18 @@ code Kernel
   function Handle_Sys_Close (fileDesc: int)
 			-- print ("Running close")
 			-- nl()
-
-			if 0 <= fileDesc && fileDesc < MAX_FILES_PER_PROCESS
-				if currentThread.myProcess.fileDescriptor[fileDesc] == "terminal"
-					currentThread.myProcess.fileDescriptor[fileDesc] = null
-				else if currentThread.myProcess.fileDescriptor[fileDesc] != null && 
-					fileManager.Close(currentThread.myProcess.fileDescriptor[fileDesc])	
-					currentThread.myProcess.fileDescriptor[fileDesc] = null
-				endIf
+			if 0 > fileDesc && fileDesc >= MAX_FILES_PER_PROCESS
+				return
 			endIf
+
+			if currentThread.myProcess.fileDescriptor[fileDesc] == null
+				return
+			endIf
+
+			if currentThread.myProcess.fileDescriptor[fileDesc].kind != TERMINAL
+				fileManager.Close(currentThread.myProcess.fileDescriptor[fileDesc])	
+			endIf
+			currentThread.myProcess.fileDescriptor[fileDesc] = null
 
 			-- print("Handle_Sys_Close invoked!")
 			-- nl()
@@ -3290,13 +3405,15 @@ code Kernel
   endBehavior
 
 -----------------------------  SerialDriver  ---------------------------------
+	function SerialHandlerFunction ()
+			serialDriver.SerialHandler()	
+		endFunction	
+
 
 	behavior SerialDriver
       ----------  SerialDriver . Inti  ----------
 		
 			method Init ()
-					var
-						myTh: ptr to Thread	
 
 					print("Initializing Serial Driver...\n")
 					serial_status_word_address = SERIAL_STATUS_WORD_ADDRESS asPtrTo int
@@ -3305,82 +3422,110 @@ code Kernel
 					serialLock = new Mutex
 					serialLock.Init()
 
+					serialNeedsAttention = new Semaphore
+					serialNeedsAttention.Init (0)
+
 					putBufferSem = new Semaphore
 					putBufferSem.Init(SERIAL_PUT_BUFFER_SIZE)
 
 					getCharacterAvail = new Condition
 					getCharacterAvail.Init()
 
-					getBuffer = new array [SERIAL_GET_BUFFER_SIZE] of char 
+					getBuffer = new array of char {SERIAL_PUT_BUFFER_SIZE of '0'}
 					getBufferSize = 0
 					getBufferNextIn = 0
 					getBufferNextOut = 0
 
-					putBuffer = new array [SERIAL_PUT_BUFFER_SIZE] of char 
+					putBuffer = new array of char {SERIAL_PUT_BUFFER_SIZE of '0'}
 					putBufferNextIn = 0
 					putBufferNextOut = 0
 
-					myTh = threadManager.GetANewThread()
-					myTh.Init("SerialMonitorThread")
-					serialHandlerThread = *myTh
-					myTh.Fork(SerialHandlerFunction, "DEADBEEF" asInteger)
+					serialHandlerThread = new Thread
+					serialHandlerThread.Init("SerialMonitorThread")
+					serialHandlerThread.Fork(SerialHandlerFunction, 0)
 
 					serialHasBeenInitialized = true
 				endMethod
 
-			method SerialHandlerFunction ()
-					serialDriver.SerialHandler()	
-				endMethod
 
       ----------  SerialDriver . GetChar  ----------
 
-			method GetChar ()
+			method GetChar () returns char
+					var
+						ret: char
+					
 					serialLock.Lock()
-
 					while getBufferSize == 0
-						getCharacterAvail.Wait()
+						getCharacterAvail.Wait(&serialLock)
 					endWhile
-						
+					ret = getBuffer[getBufferNextOut]					
+					getBufferNextOut = (getBufferNextOut+1)%SERIAL_PUT_BUFFER_SIZE
+					getBufferSize = getBufferSize-1
+
 					serialLock.Unlock()
+
+					return ret
 				endMethod
 
       ----------  SerialDriver . PutChar  ----------
 
-			method PutChar ()
+			method PutChar (value: char)
+					putBufferSem.Down()
+					serialLock.Lock()
+
+					putBuffer[putBufferNextIn] = value
+					putBufferNextIn = (putBufferNextIn+1)%SERIAL_PUT_BUFFER_SIZE
+
+					putBufferSize = putBufferSize+1
+					serialLock.Unlock()
+					serialNeedsAttention.Up()
 				endMethod
 
       ----------  SerialDriver . SerialHandler  ----------
 
 			method SerialHandler ()
 					var
-						inChar, going_out: char
+						inChar: char
+						serialStatusBit, serialOutputBit: int
 
 					while true
-						serialNeedsAttention.Wait()
+						serialNeedsAttention.Down()
 
-						serialStatusBit = ((*serial_status_word_address) & SERIAL_OUTPUT_READY_BIT >> 1)
+						serialStatusBit = ((*serial_status_word_address) & SERIAL_CHARACTER_AVAILABLE_BIT)
 
 						if serialStatusBit == 1
 							serialLock.Lock()
-							
+							inChar = intToChar (*serial_data_word_address)
+								
+							if getBufferSize == SERIAL_GET_BUFFER_SIZE
+								print("\nSerial input buffer overrun - character ''")
+								printChar(inChar)
+								print ("' was ignored\n'")
+							else
+								getBuffer[getBufferNextIn] = inChar
+								getBufferSize = getBufferSize+1
+								getBufferNextIn = (getBufferNextIn+1)%SERIAL_GET_BUFFER_SIZE
+								getCharacterAvail.Signal (&serialLock)
+							endIf
+							serialLock.Unlock()
+						endIf
+
+						
+						serialOutputBit = ((*(serial_status_word_address) & SERIAL_OUTPUT_READY_BIT) >>> 1)
+
+						if serialOutputBit == 1
+							serialLock.Lock()
+
 							if putBufferSize > 0
-								going_out = putBuffer[putBufferNextOut]	
+								inChar = putBuffer[putBufferNextOut]	
 								putBufferSize = putBufferSize - 1
 								putBufferNextOut = (putBufferNextOut + 1) % SERIAL_PUT_BUFFER_SIZE
+								(*serial_data_word_address) = inChar
+								putBufferSem.Up ()
 							endIf
+
+							serialLock.Unlock()
 						endIf
-
-
-						inChar = (*serial_data_word_address)
-
-						if getBufferSize == SERIAL_GET_BUFFER_SIZE
-							print("\nSerial input buffer overrun - character ''")
-							printChar(inChar)
-							print ("' was ignored\n'")
-						endIf
-
-						getCharacterAvail.Signal()
-						serialLock.Unlock()
 					endWhile
 				endMethod
 	endBehavior

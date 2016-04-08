@@ -106,6 +106,7 @@ header Kernel
     ProcessFinish (exitStatus: int)
 		InitFirstProcess()
 		StartUserProcess()
+		SerialHandlerFunction()
 
     -- Routines from Switch.s:
 
